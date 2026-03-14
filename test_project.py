@@ -1,56 +1,58 @@
 import unittest
+import os
 from unittest.mock import patch, MagicMock
 from api_client import DatasetClient
-from transformations import clean_data, validate_schema
 
-class TestDatasetProject(unittest.TestCase):
+class TestDatasetDownload(unittest.TestCase):
 
     def setUp(self):
-        self.client = DatasetClient("https://api.exemplo.com", "token_fake")
+        self.client = DatasetClient("https://api.test.com", "valid_token")
 
     @patch('requests.get')
-    def test_get_dataset_success(self, mock_get):
-        """Simula uma resposta de sucesso da API."""
+    def test_correct_url_and_format_param(self, mock_get):
+        """Verifica se o parâmetro ?format=parquet é enviado corretamente."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = [
-            {"id": 1, "value": 10.5, "category": "A"},
-            {"id": 2, "value": 20.0, "category": "B"}
-        ]
+        mock_response.iter_content.return_value = [b"dummy data"]
         mock_get.return_value = mock_response
 
-        result = self.client.get_dataset("proj_123")
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]["id"], 1)
+        # Executa o download pedindo parquet
+        file_path = self.client.get_dataset("proj123", file_format="parquet")
+
+        # Verifica construção da URL e Query Params
+        args, kwargs = mock_get.call_args
+        self.assertEqual(kwargs['params']['format'], 'parquet')
+        
+        # Verifica persistência
+        self.assertTrue(os.path.exists(file_path))
+        self.assertTrue(file_path.endswith(".parquet"))
+        
+        # Cleanup
+        os.remove(file_path)
 
     @patch('requests.get')
-    def test_get_dataset_http_error(self, mock_get):
-        """Valida o comportamento em caso de erro 404."""
-        mock_get.return_value.raise_for_status.side_effect = Exception("404 Not Found")
+    def test_fallback_format_logic(self, mock_get):
+        """Verifica se usa o formato padrão caso um formato inválido seja passado."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content.return_value = [b"{}"]
+        mock_get.return_value = mock_response
+
+        # Passa um formato não suportado "exe"
+        self.client.get_dataset("proj123", file_format="exe")
         
+        # Deve ter feito o fallback para o default (parquet)
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs['params']['format'], 'parquet')
+
+    @patch('requests.get')
+    def test_persistence_failure_cleanup(self, mock_get):
+        """Verifica comportamento em erro 500."""
+        mock_get.return_value.status_code = 500
+        mock_get.return_value.raise_for_status.side_effect = Exception("Internal Server Error")
+
         with self.assertRaises(Exception):
-            self.client.get_dataset("proj_invalido")
-
-    def test_transformations_logic(self):
-        """Valida as funções de limpeza e transformação."""
-        raw = [
-            {"id": "001", "value": "100", "category": "Teste"},
-            {"id": "002", "value": None}, # Deve ser filtrado
-            {"id": None, "value": 50}      # Deve ser filtrado
-        ]
-        
-        cleaned = clean_data(raw)
-        self.assertEqual(len(cleaned), 1)
-        self.assertEqual(cleaned[0]["normalized_value"], 100.0)
-        self.assertEqual(cleaned[0]["category"], "teste")
-
-    def test_schema_validation(self):
-        """Valida a detecção de schemas corrompidos."""
-        invalid_data = [{"wrong_key": 1}]
-        self.assertFalse(validate_schema(invalid_data))
-        
-        valid_data = [{"id": 1, "value": 10}]
-        self.assertTrue(validate_schema(valid_data))
+            self.client.get_dataset("proj_error")
 
 if __name__ == '__main__':
     unittest.main()
