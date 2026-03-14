@@ -1,11 +1,24 @@
+import json
+
+def process_dataset_file(file_path):
+    """
+    Lê o arquivo persistido e aplica as transformações.
+    """
+    # Exemplo tratando especificamente JSON para as transformações existentes
+    if file_path.endswith('.json'):
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+            return clean_data(data)
+    return f"Arquivo {file_path} pronto para processamento binário/específico."
+
 def clean_data(raw_data):
     """
-    Remove registros nulos e normaliza nomes de campos.
-    Etapa essencial para garantir a consistência antes da análise.
+    Limpa dados JSON normalizando campos.
     """
     cleaned = []
+    if not isinstance(raw_data, list): return cleaned
+    
     for item in raw_data:
-        # Filtra registros que não possuem campos essenciais
         if item.get("id") and item.get("value") is not None:
             cleaned.append({
                 "record_id": item["id"],
@@ -13,25 +26,3 @@ def clean_data(raw_data):
                 "category": item.get("category", "unassigned").lower()
             })
     return cleaned
-
-def aggregate_by_category(data):
-    """
-    Soma os valores normalizados agrupando por categoria.
-    Útil para relatórios gerenciais e dashboards.
-    """
-    totals = {}
-    for entry in data:
-        cat = entry["category"]
-        totals[cat] = totals.get(cat, 0) + entry["normalized_value"]
-    return totals
-
-def validate_schema(data):
-    """
-    Verifica se a estrutura mínima de dados está presente.
-    Retorna True se válido, False caso contrário.
-    """
-    if not data:
-        return False
-    
-    required_keys = {"id", "value"}
-    return all(required_keys.issubset(item.keys()) for item in data)
