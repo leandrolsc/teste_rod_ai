@@ -1,10 +1,72 @@
-# teste_rod_ai
+Dataset Downloader & Processor
+
+Este repositório contém um script robusto para baixar datasets de projetos via API REST e realizar transformações de dados para análise posterior.
+
+Requisitos
+
+Python 3.8+
+
+Biblioteca requests
+
+Instale as dependências:
+
+pip install requests
 
 
-O código inclui funções claras para chamar a API /api/v1/projects/{project_id}/dataset e tratar a resposta HTTP antes de qualquer análise.
+Estrutura do Projeto
 
-Existem testes unitários que simulam resposta da API e validam o comportamento de download/validação.
+api_client.py: Encapsula as chamadas HTTP e tratamento de erros.
 
-As transformações são implementadas em funções reutilizáveis, com comentários explicando o propósito de cada etapa.
+transformations.py: Funções puras para processamento e limpeza dos dados.
 
-O repositório contém README explicando como executar o script e quais parâmetros devem ser passados para acessar a API.
+test_project.py: Testes automatizados para garantir a qualidade do código.
+
+Como Executar
+
+O script principal (ou integração) requer dois parâmetros fundamentais para autenticação e localização da API.
+
+Parâmetros da API
+
+Parâmetro
+
+Descrição
+
+Exemplo
+
+BASE_URL
+
+URL base do servidor API
+
+https://api.empresa.com
+
+API_TOKEN
+
+Token de autenticação Bearer
+
+e9f8...a12
+
+PROJECT_ID
+
+Identificador único do projeto
+
+654321
+
+Exemplo de Uso Rápido
+
+from api_client import DatasetClient
+from transformations import clean_data, aggregate_by_category
+
+client = DatasetClient("[https://api.suaempresa.com](https://api.suaempresa.com)", "seu_token")
+raw_data = client.get_dataset("ID_DO_PROJETO")
+
+if raw_data:
+    data = clean_data(raw_data)
+    summary = aggregate_by_category(data)
+    print("Resumo por Categoria:", summary)
+
+
+Executando Testes
+
+Para validar o comportamento do sistema sem consumir créditos da API real, execute:
+
+python test_project.py
