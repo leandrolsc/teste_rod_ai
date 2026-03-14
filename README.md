@@ -1,72 +1,46 @@
-Dataset Downloader & Processor
+Dataset Processor (v2.0)
 
-Este repositório contém um script robusto para baixar datasets de projetos via API REST e realizar transformações de dados para análise posterior.
+Este projeto realiza o download, persistência temporária e processamento de datasets via API.
 
-Requisitos
+Formatos Suportados
 
-Python 3.8+
+O sistema suporta os seguintes formatos via parâmetro de consulta:
 
-Biblioteca requests
+Parquet (?format=parquet): Formato padrão, recomendado para grandes volumes.
 
-Instale as dependências:
+JSON (?format=json): Utilizado para transformações rápidas e debug.
 
-pip install requests
+CSV, LOG, XML: Suportados para exportações legadas.
 
+Lógica de Seleção de Formato
 
-Estrutura do Projeto
+O script decide o formato com base na seguinte prioridade:
 
-api_client.py: Encapsula as chamadas HTTP e tratamento de erros.
+Argumento Explícito: Caso o usuário passe file_format na chamada da função.
 
-transformations.py: Funções puras para processamento e limpeza dos dados.
+Validação: Se o formato solicitado não estiver na lista de suportados (parquet, json, csv, log, xml), o sistema faz o fallback automático para o formato padrão configurado no cliente (Default: parquet).
 
-test_project.py: Testes automatizados para garantir a qualidade do código.
+Fluxo de Execução
 
-Como Executar
+Download: A API é chamada com o query param adequado.
 
-O script principal (ou integração) requer dois parâmetros fundamentais para autenticação e localização da API.
+Persistência: O conteúdo é gravado em um arquivo temporário (/tmp ou similar) antes de qualquer leitura. Isso garante que falhas de memória não ocorram com datasets gigantes.
 
-Parâmetros da API
+Validação: O código verifica o status HTTP antes de liberar o arquivo para o processador.
 
-Parâmetro
+Uso
 
-Descrição
+client = DatasetClient(base_url="...", api_token="...", default_format="parquet")
 
-Exemplo
+# Baixa em parquet por padrão e salva em arquivo temp
+caminho_arquivo = client.get_dataset(project_id="123") 
 
-BASE_URL
-
-URL base do servidor API
-
-https://api.empresa.com
-
-API_TOKEN
-
-Token de autenticação Bearer
-
-e9f8...a12
-
-PROJECT_ID
-
-Identificador único do projeto
-
-654321
-
-Exemplo de Uso Rápido
-
-from api_client import DatasetClient
-from transformations import clean_data, aggregate_by_category
-
-client = DatasetClient("[https://api.suaempresa.com](https://api.suaempresa.com)", "seu_token")
-raw_data = client.get_dataset("ID_DO_PROJETO")
-
-if raw_data:
-    data = clean_data(raw_data)
-    summary = aggregate_by_category(data)
-    print("Resumo por Categoria:", summary)
+# Força download em JSON
+caminho_json = client.get_dataset(project_id="123", file_format="json")
 
 
-Executando Testes
+Testes
 
-Para validar o comportamento do sistema sem consumir créditos da API real, execute:
+Os testes validam a construção da URL, a escrita física do arquivo no disco e a lógica de fallback de formatos:
 
 python test_project.py
