@@ -1,46 +1,52 @@
-Dataset Processor (v2.0)
+Pipeline de Ingestão de Dados do Projeto
 
-Este projeto realiza o download, persistência temporária e processamento de datasets via API.
+Este projeto contém uma pipeline de dados automatizada (DAG) construída com Apache Airflow. A pipeline é responsável por extrair dados de uma API, processá-los utilizando Pandas e salvá-los em formatos otimizados localmente/temporariamente.
 
-Formatos Suportados
+Responsabilidade de Cada Etapa
 
-O sistema suporta os seguintes formatos via parâmetro de consulta:
+Extração (Ingestão): A DAG faz uma requisição GET para o endpoint /projects/{project_id}/dataset e salva o payload bruto (raw) no formato JSON em um diretório temporário.
 
-Parquet (?format=parquet): Formato padrão, recomendado para grandes volumes.
+Transformação: O arquivo src/transformations.py contém funções puras e reutilizáveis em Pandas. Ele lê o JSON bruto, realiza a limpeza dos dados (remoção de nulos, padronização) e os prepara.
 
-JSON (?format=json): Utilizado para transformações rápidas e debug.
+Carga (Armazenamento): Após a transformação, os dados são salvos no formato Parquet (suportado e altamente otimizado para analytics).
 
-CSV, LOG, XML: Suportados para exportações legadas.
+Testes Automatizados: O diretório tests/ contém testes unitários usando pytest para garantir que o parse e a validação/limpeza dos dados funcionem conforme o esperado.
 
-Lógica de Seleção de Formato
+Como Executar Localmente
 
-O script decide o formato com base na seguinte prioridade:
+1. Pré-requisitos
 
-Argumento Explícito: Caso o usuário passe file_format na chamada da função.
+Certifique-se de ter o Python 3.8+ instalado. Recomenda-se o uso de um ambiente virtual (venv).
 
-Validação: Se o formato solicitado não estiver na lista de suportados (parquet, json, csv, log, xml), o sistema faz o fallback automático para o formato padrão configurado no cliente (Default: parquet).
+2. Instalação das Dependências
 
-Fluxo de Execução
+Instale as bibliotecas necessárias executando:
 
-Download: A API é chamada com o query param adequado.
-
-Persistência: O conteúdo é gravado em um arquivo temporário (/tmp ou similar) antes de qualquer leitura. Isso garante que falhas de memória não ocorram com datasets gigantes.
-
-Validação: O código verifica o status HTTP antes de liberar o arquivo para o processador.
-
-Uso
-
-client = DatasetClient(base_url="...", api_token="...", default_format="parquet")
-
-# Baixa em parquet por padrão e salva em arquivo temp
-caminho_arquivo = client.get_dataset(project_id="123") 
-
-# Força download em JSON
-caminho_json = client.get_dataset(project_id="123", file_format="json")
+pip install -r requirements.txt
 
 
-Testes
+3. Executando os Testes Unitários
 
-Os testes validam a construção da URL, a escrita física do arquivo no disco e a lógica de fallback de formatos:
+Para rodar a validação e o parse básico dos dados, utilize o Pytest:
 
-python test_project.py
+pytest tests/
+
+
+4. Executando a Pipeline (Airflow Local)
+
+Como é um projeto Airflow, você pode testar as tarefas individualmente sem precisar subir todo o webserver do Airflow, usando o comando airflow tasks test:
+
+# Definir a pasta de dags local
+export AIRFLOW_HOME=$(pwd)
+
+# Inicializar o banco de dados do Airflow (apenas na primeira vez)
+airflow db init
+
+# Testar a extração
+airflow tasks test ingestao_dados_projeto extrair_dados_api 2026-01-01
+
+# Testar a transformação e salvamento
+airflow tasks test ingestao_dados_projeto transformar_e_salvar_dados 2026-01-01
+
+
+(Nota: Certifique-se de configurar a variável de ambiente API_BASE_URL ou usar um mock local da API caso a URL de produção exija autenticação real).
