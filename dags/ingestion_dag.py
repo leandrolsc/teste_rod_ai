@@ -8,6 +8,7 @@ import logging
 
 # Importando as funções modulares de transformação
 from src.transformations import realizar_parse_json, validar_e_limpar_dados, salvar_como_parquet
+from src.analytics import calcular_cross_sell, calcular_sequencia_visualizacao, salvar_indicadores_csv
 
 # Configurações do Projeto
 PROJECT_ID = "projeto_xyz_123"
@@ -18,6 +19,8 @@ API_URL = f"https://api.exemplo.com/v1/projects/{PROJECT_ID}/dataset"
 TEMP_DIR = "/tmp/data_pipeline"
 RAW_JSON_PATH = f"{TEMP_DIR}/raw_dataset_{PROJECT_ID}.json"
 PROCESSED_PARQUET_PATH = f"{TEMP_DIR}/processed_dataset_{PROJECT_ID}.parquet"
+CROSS_SELL_CSV_PATH = f"{TEMP_DIR}/cross_sell_{PROJECT_ID}.csv"
+VIEWS_SEQ_CSV_PATH = f"{TEMP_DIR}/views_sequence_{PROJECT_ID}.csv"
 
 # Argumentos padrão da DAG
 default_args = {
@@ -63,6 +66,29 @@ def _transformar_e_salvar_dados(**kwargs):
     # 3. Salvar no formato suportado (Parquet)
     salvar_como_parquet(df_clean, PROCESSED_PARQUET_PATH)
 
+def _modelagem_analitica(**kwargs):
+    """
+    Lê os dados limpos em Parquet, aplica as transformações de modelagem
+    analítica (cross-sell e sequência) e salva em formato suportado (CSV).
+    """
+    import pandas as pd
+    
+    # Ler dados limpos da etapa anterior
+    df_clean = pd.read_parquet(PROCESSED_PARQUET_PATH)
+    
+    # Verificar se as colunas necessárias para logs existem.
+    # Caso este dataset não seja de logs, a função lidará de forma graciosa.
+    colunas_necessarias = {'session_id', 'item_id', 'action', 'timestamp'}
+    if colunas_necessarias.issubset(set(df_clean.columns)):
+        df_cross = calcular_cross_sell(df_clean)
+        df_seq = calcular_sequencia_visualizacao(df_clean)
+        
+        salvar_indicadores_csv(df_cross, CROSS_SELL_CSV_PATH)
+        salvar_indicadores_csv(df_seq, VIEWS_SEQ_CSV_PATH)
+        logging.info("Modelagem analítica concluída com sucesso.")
+    else:
+        logging.warning("Colunas necessárias para modelagem de logs não encontradas no dataset. Pulando etapa.")
+
 # Definição da DAG
 with DAG(
     'ingestao_dados_projeto',
@@ -85,5 +111,11 @@ with DAG(
         provide_context=True
     )
 
+    task_modelagem = PythonOperator(
+        task_id='modelagem_analitica',
+        python_callable=_modelagem_analitica,
+        provide_context=True
+    )
+
     # Definição da ordem de execução (Dependência)
-    task_extrair >> task_transformar
+    task_extrair >> task_transformar >> task_modelagem
