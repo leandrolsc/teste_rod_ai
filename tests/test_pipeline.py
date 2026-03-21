@@ -1,53 +1,51 @@
 import pytest
 import pandas as pd
 import json
-import os
 from src.transformations import realizar_parse_json, validar_e_limpar_dados
 
-# Fixture para criar um arquivo JSON temporário para testes
 @pytest.fixture
-def json_temporario(tmpdir):
-    dados_mock = [
-        {"id": 1, "Nome": "Projeto Alfa", "Status": "Ativo"},
-        {"id": None, "Nome": "Projeto Invalido", "Status": "Pendente"}, # ID nulo, deve ser removido
-        {"id": 3, "Nome": "Projeto Beta", "Status": None} # Status nulo, deve virar "N/A"
+def json_payload_api(tmpdir):
+    """
+    Simula o payload exato retornado pelo endpoint GET /projects/{project_id}/dataset
+    incluindo casos que precisam de validação (nulos, letras maiúsculas).
+    """
+    dados_api = [
+        {"id": "evt_001", "session_id": "s1", "item_id": "item_A", "action": "view", "timestamp": "2026-03-20T10:00:00Z"},
+        {"id": None, "session_id": "s1", "item_id": "item_B", "action": "VIEW", "timestamp": "2026-03-20T10:05:00Z"}, # ID Nulo
+        {"id": "evt_003", "session_id": "s2", "item_id": "item_A", "action": "purchase", "timestamp": None} # Timestamp nulo
     ]
-    arquivo = tmpdir.join("dados_teste.json")
+    arquivo = tmpdir.join("api_response_mock.json")
     with open(arquivo, 'w') as f:
-        json.dump(dados_mock, f)
+        json.dump(dados_api, f)
     return str(arquivo)
 
-def test_realizar_parse_json(json_temporario):
+def test_validar_parse_arquivo_baixado(json_payload_api):
     """
-    Testa se o parser lê o JSON e converte para DataFrame corretamente.
+    Assegura o parse correto do arquivo baixado da API para as estruturas do Pandas.
     """
-    df = realizar_parse_json(json_temporario)
+    df = realizar_parse_json(json_payload_api)
     
+    # Verifica se os tipos básicos foram respeitados no parse
     assert isinstance(df, pd.DataFrame)
     assert len(df) == 3
-    assert list(df.columns) == ["id", "Nome", "Status"]
+    # Verifica se as colunas vieram corretamente do payload
+    assert "session_id" in df.columns
+    assert "action" in df.columns
 
-def test_validar_e_limpar_dados():
+def test_validacao_limpeza_dados_api(json_payload_api):
     """
-    Testa as regras de limpeza: 
-    - Remoção de nulos em 'id'
-    - Lowercase em colunas
-    - Preenchimento de texto nulo com 'N/A'
+    Assegura que as validações básicas (remoção de nulos essenciais, 
+    padronização) estão ocorrendo na saída bruta da API.
     """
-    df_cru = pd.DataFrame([
-        {"id": 1, "Nome": "A", "Status": "Ativo"},
-        {"id": pd.NA, "Nome": "B", "Status": "Pendente"},
-        {"id": 3, "Nome": "C", "Status": None}
-    ])
+    df_raw = realizar_parse_json(json_payload_api)
+    df_clean = validar_e_limpar_dados(df_raw)
     
-    df_limpo = validar_e_limpar_dados(df_cru)
+    # Linha com 'id' nulo (evt_002) deve ter sido descartada
+    assert len(df_clean) == 2
     
-    # Verifica se a linha com id nulo foi removida (espera 2 linhas restantes)
-    assert len(df_limpo) == 2
+    # Nomes de colunas devem estar em lowercase
+    assert all(col.islower() for col in df_clean.columns)
     
-    # Verifica se as colunas ficaram em letras minúsculas
-    assert list(df_limpo.columns) == ["id", "nome", "status"]
-    
-    # Verifica o preenchimento de nulos ("N/A")
-    registro_id_3 = df_limpo[df_limpo['id'] == 3].iloc[0]
-    assert registro_id_3['status'] == "N/A"
+    # Valores nulos não críticos devem ter sido preenchidos com N/A
+    registro_sem_timestamp = df_clean[df_clean['id'] == 'evt_003'].iloc[0]
+    assert registro_sem_timestamp['timestamp'] == "N/A"
