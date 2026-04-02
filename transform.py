@@ -1,22 +1,27 @@
 import pandas as pd
+from datetime import datetime
 
-def aggregate_temporal_data(df: pd.DataFrame):
+def transform_claims_data(df: pd.DataFrame):
     """
-    Realiza a agregação temporal dos dados para consolidar métricas por dia.
-    
-    Tabela Final Esperada:
-    | Coluna       | Tipo     | Descrição                          |
-    |--------------|----------|------------------------------------|
-    | data         | datetime | Data da transação                  |
-    | total_valor  | float    | Soma dos valores no período        |
-    | source_info  | string   | Origem do dado (API + Timestamp)   |
+    Normaliza timestamps e tipos de sinistro antes da agregação.
     """
-    # Exemplo de lógica de agregação (Mesmo SQL usado nos testes)
-    df['data'] = pd.to_datetime(df['timestamp']).dt.date
-    aggregated = df.groupby('data')['valor'].sum().reset_index()
+    # 1. Normalização de Timestamps
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    df = df.dropna(subset=['timestamp']) # Remove registros com data inválida
     
-    # Adicionando referenciamento à fonte (Rastreabilidade)
-    now = datetime.datetime.now().isoformat()
-    aggregated['source_info'] = f"API_DataMission_v1_at_{now}"
+    # 2. Normalização de Tipos de Sinistro (Ex: 'roubo' -> 'ROUBO')
+    if 'tipo_sinistro' in df.columns:
+        df['tipo_sinistro'] = df['tipo_sinistro'].str.strip().str.upper()
+
+    # 3. Agregação Temporal (Mesma lógica do SQL de teste)
+    df['data_referencia'] = df['timestamp'].dt.date
+    aggregated = df.groupby(['data_referencia', 'tipo_sinistro']).agg({
+        'valor': 'sum'
+    }).reset_index()
+
+    # 4. Rastreabilidade e Cabeçalho
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    aggregated['meta_source_api'] = f"DataMission_v1"
+    aggregated['meta_processed_at'] = now_str
     
     return aggregated
