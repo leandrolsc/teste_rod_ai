@@ -10,14 +10,12 @@ Certifique-se de ter o Python 3.8+ instalado. Você precisará das seguintes bib
 pip install requests pandas pyarrow 
 ```
 
-# Pipeline de Ingestão e Score de Anomalias
+# Pipeline de Detecção de Anomalias e Integração de Fraude
 
-Este repositório contém a rotina automatizada para baixar dados transacionais da API da Datamission, higienizá-los e calcular um **Score de Anomalia** por cliente.
+Este repositório contém a automação para extrair dados da API da Datamission, processar higienização, gerar scores de anomalias de transação e exportar os resultados com rastreabilidade de lote.
 
 ## 📋 Pré-requisitos
-
-Certifique-se de ter o Python 3.8+ instalado e instale as dependências:
-
 ```bash
 pip install requests pandas pyarrow
-``` 
+```
+

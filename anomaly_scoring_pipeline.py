@@ -2,7 +2,8 @@ import os
 import requests
 import pandas as pd
 import logging
-from typing import Dict
+from typing import Dict, Tuple
+from datetime import datetime
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,9 +24,13 @@ class SchemaValidationError(Exception):
 # Funções do Pipeline
 # ==========================================
 
-def download_dataset(project_id: str, token: str, output_path: str) -> None:
+def download_dataset(project_id: str, token: str, output_path: str) -> str:
     """
     Faz o download dos dados brutos em formato Parquet via API antes de qualquer processamento.
+    Captura metadados da resposta para identificar a versão do lote (ETag ou Timestamp).
+    
+    Retorna:
+        str: Versão do dataset obtida no momento do download.
     """
     url = f"https://api.datamission.com.br/projects/{project_id}/dataset?format=parquet"
     headers = {"Authorization": f"Bearer {token}"}
@@ -35,10 +40,15 @@ def download_dataset(project_id: str, token: str, output_path: str) -> None:
     response = requests.get(url, headers=headers)
     response.raise_for_status()
 
+    # Tentativa de capturar a versão oficial via ETag ou Data de Modificação. 
+    # Caso a API não forneça, gera um timestamp do lote.
+    dataset_version = response.headers.get('ETag', response.headers.get('Last-Modified', f"batch_{datetime.now().strftime('%Y%m%d%H%M%S')}")).replace('"', '')
+
     with open(output_path, "wb") as file:
         file.write(response.content)
     
-    logging.info(f"Download concluído e salvo em formato intermediário: {output_path}")
+    logging.info(f"Download concluído (Versão do Lote: {dataset_version}). Salvo em: {output_path}")
+    return dataset_version
 
 def validate_schema(df: pd.DataFrame, expected_schema: Dict[str, str]) -> None:
     """
@@ -68,20 +78,17 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     
     Passos realizados:
     - Remoção de registros duplicados (idênticos).
-    - Preenchimento de valores faltantes (NaN) com 0 para métricas de risco,
-      assumindo que a ausência de dados indica ausência da anomalia registrada.
+    - Preenchimento de valores faltantes (NaN) com 0 para métricas de risco.
     """
     logging.info("Iniciando limpeza de dados (duplicatas e nulos)...")
     df_clean = df.copy()
     
-    # 1. Remoção de Duplicatas
     linhas_antes = len(df_clean)
     df_clean = df_clean.drop_duplicates(subset=['id_cliente'])
     linhas_depois = len(df_clean)
     if linhas_antes != linhas_depois:
-        logging.info(f"Removidas {linhas_antes - linhas_depois} linhas duplicadas de clientes.")
+        logging.info(f"Removidas {linhas_antes - linhas_depois} linhas duplicadas.")
 
-    # 2. Preenchimento de Valores Faltantes
     colunas_metricas = ['frequencia_transacoes', 'volume_relativo', 'percentual_estornos']
     colunas_presentes = [c for c in colunas_metricas if c in df_clean.columns]
     
@@ -93,46 +100,41 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 def calculate_score(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calcula o Score de Anomalia combinando frequência, volume e estornos.
-    
-    Regra de Negócio:
-    Score Bruto = (Frequência * Peso 1) + (Volume Relativo * Peso 2) + (Estornos * Peso 3)
-    O score final é normalizado de 0 a 100, onde 100 representa o maior nível de anomalia.
+    Normaliza de 0 a 100 com proteção contra divisão por zero.
     """
     logging.info("Iniciando cálculo do score de anomalias...")
     df_scored = df.copy()
 
-    # Pesos arbitrários sugeridos para o cálculo (podem ser ajustados conforme o modelo de negócio)
-    PESO_FREQ = 0.2
-    PESO_VOL = 0.3
-    PESO_ESTORNO = 0.5
+    PESO_FREQ, PESO_VOL, PESO_ESTORNO = 0.2, 0.3, 0.5
 
-    # Cálculo Ponderado
     score_bruto = (
         (df_scored['frequencia_transacoes'] * PESO_FREQ) + 
         (df_scored['volume_relativo'] * PESO_VOL) + 
         (df_scored['percentual_estornos'] * PESO_ESTORNO)
     )
     
-    # Normalização segura (0 a 100)
     max_score = score_bruto.max()
     if max_score > 0:
         df_scored['score_anomalia'] = (score_bruto / max_score) * 100
     else:
-        logging.warning("Métricas nulas em todo o dataset. Atribuindo score de anomalia 0.")
+        logging.warning("Métricas nulas. Atribuindo score de anomalia 0.")
         df_scored['score_anomalia'] = 0
 
-    # Arredondamento para duas casas decimais para melhor legibilidade no CSV
     df_scored['score_anomalia'] = df_scored['score_anomalia'].clip(lower=0, upper=100).round(2)
-
     logging.info("Cálculo de anomalias concluído.")
     return df_scored
 
-def export_score_to_csv(df: pd.DataFrame, output_path: str) -> None:
+def export_score_to_csv(df: pd.DataFrame, version_metadata: str, output_path: str) -> None:
     """
-    Exporta o dataframe final contendo os scores para um arquivo CSV.
+    Exporta o dataframe final para CSV e insere os metadados de versão da API.
     """
-    logging.info(f"Exportando resultados para {output_path}...")
-    df.to_csv(output_path, index=False, sep=';', encoding='utf-8')
+    logging.info(f"Exportando resultados com metadados da versão ({version_metadata})...")
+    
+    # Adicionando a coluna de metadados
+    df_export = df.copy()
+    df_export['versao_lote_api'] = version_metadata
+
+    df_export.to_csv(output_path, index=False, sep=';', encoding='utf-8')
     logging.info("Exportação concluída com sucesso.")
 
 # ==========================================
@@ -146,7 +148,6 @@ if __name__ == "__main__":
     ARQUIVO_PARQUET_BRUTO = f"dataset_anomalias_{PROJECT_ID}.parquet"
     ARQUIVO_CSV_FINAL = "score_anomalias_resultados.csv"
 
-    # Atualizado para as novas colunas requisitadas
     ESQUEMA_ESPERADO = {
         'id_cliente': 'object',
         'frequencia_transacoes': 'numeric',
@@ -155,16 +156,18 @@ if __name__ == "__main__":
     }
 
     try:
-        download_dataset(PROJECT_ID, TOKEN, ARQUIVO_PARQUET_BRUTO)
+        versao_dataset = download_dataset(PROJECT_ID, TOKEN, ARQUIVO_PARQUET_BRUTO)
+        
         df_bruto = pd.read_parquet(ARQUIVO_PARQUET_BRUTO)
         validate_schema(df_bruto, ESQUEMA_ESPERADO)
+        
         df_limpo = clean_data(df_bruto)
         df_score = calculate_score(df_limpo)
         
         colunas_exportacao = ['id_cliente', 'score_anomalia']
         df_final = df_score[colunas_exportacao]
         
-        export_score_to_csv(df_final, ARQUIVO_CSV_FINAL)
+        export_score_to_csv(df_final, versao_dataset, ARQUIVO_CSV_FINAL)
 
     except requests.exceptions.HTTPError as http_err:
         logging.error(f"Erro na requisição à API: {http_err}")
