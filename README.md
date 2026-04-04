@@ -20,4 +20,4 @@ Certifique-se de ter o Python 3.8+ instalado e instale as dependências:
 
 ```bash
 pip install requests pandas pyarrow
-```
+``` 
