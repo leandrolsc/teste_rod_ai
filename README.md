@@ -19,3 +19,12 @@ Este repositório contém a automação para extrair dados da API da Datamission
 pip install requests pandas pyarrow
 ```
 
+
+# Pipeline de Ingestão e Score de Risco/Fraude
+
+Este repositório contém a rotina automatizada para baixar dados transacionais ou de crédito da API da Datamission, higienizá-los e gerar pontuações para os clientes com total rastreabilidade.
+
+## 📋 Pré-requisitos
+```bash
+pip install requests pandas pyarrow
+```
